@@ -12,6 +12,17 @@ nixpkgs.lib.nixosSystem {
     determinate.nixosModules.default
     nixosModules.default
 
+    {
+      fileSystems."/" = {
+        device = "none";
+        fsType = "tmpfs";
+        options = [ "mode=0755" ];
+      };
+
+      boot.loader.grub.enable = false;
+      boot.loader.systemd-boot.enable = false;
+    }
+
     (
       { pkgs, ... }:
       {
