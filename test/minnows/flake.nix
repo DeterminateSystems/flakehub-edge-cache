@@ -30,8 +30,7 @@
         { pkgs, system, ... }:
         {
           default = import ./system.nix {
-            inherit inputs;
-            system = "aarch64-linux";
+            inherit inputs system;
           };
         }
       );

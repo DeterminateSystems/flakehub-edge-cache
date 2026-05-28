@@ -173,11 +173,9 @@ flow.new {
 
           keepalive_timeout  65;
 
-          ${lib.optionalString (this.tempDirectory != null) "proxy_temp_path ${this.tempDirectory} 1 2;"}
           proxy_cache_path
             ${this.cacheDirectory}
             levels=1:2
-            use_temp_path=${if this.tempDirectory != null then "on" else "off"}
             keys_zone=fhc:${this.keyZoneSize}
             ${lib.optionalString (this.maxCacheSize != null) "max_size=${this.maxCacheSize}"}
             ${lib.optionalString (this.minCacheFree != null) "min_free=${this.minCacheFree}"}
