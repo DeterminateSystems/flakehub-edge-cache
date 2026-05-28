@@ -20,6 +20,17 @@ inputs.minnows.lib.minnowsSystem {
     "demo-qemu" = {
       definition = inputs.minnows-platform-qemu.minnowsPlatforms.default;
     };
+    "demo-enable-debug" = {
+      definition = {
+        id = "enable-debug";
+        description = "enable-debug";
+        docs = "enable-debug";
+        include = {
+          minnows.debug = true;
+        };
+        mkBootspecOutputs = _: { };
+      };
+    };
   };
 
   resources = {
@@ -43,8 +54,12 @@ inputs.minnows.lib.minnowsSystem {
   };
 
   flows.fec1 = {
-    definition = import ../flow.nix { inherit inputs system; };
-    config = { };
+    definition = import ../../flow.nix { inherit inputs; };
+    config = {
+      nginx = inputs.nixpkgs.legacyPackages.${system}.nginx;
+    };
+    grantedCapabilities.runAsRoot = true;
+    grantedCapabilities.fullFilesystemAccess = true;
     resources = {
       users.user = "hello-minnows";
       groups.group = "hello-minnows";

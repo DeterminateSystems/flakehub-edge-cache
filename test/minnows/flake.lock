@@ -207,6 +207,20 @@
         "url": "https://flakehub.com/f/DeterminateSystems/minnows/%2A"
       }
     },
+    "minnows-flow-debug-shell": {
+      "locked": {
+        "lastModified": 1779834625,
+        "narHash": "sha256-YzYR6XgPUSi7CqOg1tr+M8ifjX3vI6I7kvSVGVu8TM8=",
+        "rev": "e4facfa1ce9b372684ba48287e795a5271e89a70",
+        "revCount": 2609,
+        "type": "tarball",
+        "url": "https://api.flakehub.com/f/pinned/DeterminateSystems/minnows-flow-debug-shell/0.1.2609%2Brev-e4facfa1ce9b372684ba48287e795a5271e89a70/019e666a-fed5-7481-b2c2-16611e9cb230/source.tar.gz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://flakehub.com/f/DeterminateSystems/minnows-flow-debug-shell/%2A"
+      }
+    },
     "minnows-platform-qemu": {
       "inputs": {
         "minnows": "minnows_2",
@@ -327,6 +341,7 @@
     "root": {
       "inputs": {
         "minnows": "minnows",
+        "minnows-flow-debug-shell": "minnows-flow-debug-shell",
         "minnows-platform-qemu": "minnows-platform-qemu",
         "nixpkgs": [
           "minnows",

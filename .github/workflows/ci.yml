@@ -30,6 +30,11 @@ jobs:
       - name: Check Nix formatting
         run: git ls-files '*.nix' | nix develop --command xargs nixfmt --check
 
+      - name: Check Minnows Test VM
+        run: |
+          cd test/minnows
+          nix flake check --build-all
+
   DeterminateCI:
     needs: [checks]
     uses: DeterminateSystems/ci/.github/workflows/workflow.yml@main
