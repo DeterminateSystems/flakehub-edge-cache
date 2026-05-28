@@ -167,6 +167,7 @@ flow.new {
                             '"$http_user_agent" "$http_x_forwarded_for"';
 
           access_log  ${flowContext.stateDir}/access.log main;
+          error_log  ${flowContext.stateDir}/error.log main;
 
           sendfile        on;
           #tcp_nopush     on;
