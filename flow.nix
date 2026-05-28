@@ -37,6 +37,15 @@ flow.new {
       description = "Group that owns the cache directory";
       example = "flakehub-edge-cache";
     };
+
+    listeningPorts.listeningPort = {
+      description = "Port on which nginx accepts incoming cache requests.";
+      example = {
+        family = null;
+        protocol = "tcp";
+        port = 80;
+      };
+    };
   };
 
   interface =
@@ -54,15 +63,6 @@ flow.new {
         description = "List of IP addresses for nginx to use when resolving the cache.flakehub.com address.";
         type = flow.lib.types.listOf flow.lib.types.str;
         default = [ "127.0.0.1" ];
-      };
-
-      listen = {
-        description = "Listen directive for nginx. All servers are given as the default server.";
-        type = flow.lib.types.listOf flow.lib.types.str;
-        default = [
-          "80"
-          "[::]:80"
-        ];
       };
 
       cacheLifetime = {
@@ -113,13 +113,29 @@ flow.new {
     let
       inherit (resources.users) user;
       inherit (resources.groups) group;
+      inherit (resources.listeningPorts) listeningPort;
       inherit (pkgs) lib;
 
       cacheDirectory = "${flowContext.stateDir}/cache-state";
+      errorLogLocation = "${flowContext.stateDir}/error.log";
+
+      listenAddrs =
+        let
+          port = toString listeningPort.port;
+        in
+        if listeningPort.family == "ipv6" then
+          [ "[::]:${port}" ]
+        else if listeningPort.family == "ipv4" then
+          [ port ]
+        else
+          [
+            port
+            "[::]:${port}"
+          ];
 
       edgeConfiguration = builtins.toFile "fhc-edge.conf" ''
         server {
-          ${lib.concatMapStringsSep "\n  " (addr: "listen ${addr} default_server;") this.listen}
+          ${lib.concatMapStringsSep "\n  " (addr: "listen ${addr} default_server;") listenAddrs}
 
           # Ignored by nginx since we're using default_server for our listening
           server_name _;
@@ -147,7 +163,7 @@ flow.new {
       '';
 
       nginxConfiguration = builtins.toFile "fhc-edge-nginx.conf" ''
-        error_log ${flowContext.stateDir}/error.log;
+        error_log ${errorLogLocation};
 
         # Run workers under the edge cache user
         user ${user.name};
@@ -168,8 +184,7 @@ flow.new {
                             '$status $body_bytes_sent "$http_referer" '
                             '"$http_user_agent" "$http_x_forwarded_for"';
 
-          access_log  ${flowContext.stateDir}/access-main.log main;
-          error_log  ${flowContext.stateDir}/error-main.log main;
+          access_log  ${flowContext.stateDir}/access.log main;
 
           sendfile        on;
           #tcp_nopush     on;
@@ -200,7 +215,7 @@ flow.new {
         Service.ExecStartPre = [
           "+${pkgs.bash}/bin/sh ${preStartScriptRoot}"
         ];
-        Service.ExecStart = "${lib.getExe this.nginx} -c ${nginxConfiguration}";
+        Service.ExecStart = "${lib.getExe this.nginx} -e \"${errorLogLocation}\" -c \"${nginxConfiguration}\"";
       };
     };
 }

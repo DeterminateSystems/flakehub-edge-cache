@@ -51,6 +51,12 @@ inputs.minnows.lib.minnowsSystem {
       protocol = "tcp";
       port = 22;
     };
+
+    listeningPorts.http = {
+      family = null;
+      protocol = "tcp";
+      port = 80;
+    };
   };
 
   flows.fec1 = {
@@ -63,6 +69,7 @@ inputs.minnows.lib.minnowsSystem {
     resources = {
       users.user = "hello-minnows";
       groups.group = "hello-minnows";
+      listeningPorts.listeningPort = "http";
     };
   };
 
