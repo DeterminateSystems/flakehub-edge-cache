@@ -33,7 +33,7 @@ jobs:
       - name: Check Minnows Test VM
         run: |
           cd test/minnows
-          nix flake check --build-all
+          nix flake check --build-all -L
 
   DeterminateCI:
     needs: [checks]
