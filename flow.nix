@@ -89,11 +89,11 @@ flow.new {
         default = null;
       };
 
-      cacheDirectory = {
-        description = "Directory to use for the edge cache. Created (and chowned to the user/group resources) on service start.";
-        type = flow.lib.types.path;
-        default = "/var/flakehub-edge-cache";
-      };
+      # cacheDirectory = {
+      #   description = "Directory to use for the edge cache. Created (and chowned to the user/group resources) on service start.";
+      #   type = flow.lib.types.path;
+      #   default = "/var/flakehub-edge-cache";
+      # };
 
       # tempDirectory = {
       #   description = "Whether or not to store in-progress cache objects in a temporary directory. If null, nginx will only use its cache storage.";
@@ -114,6 +114,8 @@ flow.new {
       inherit (resources.users) user;
       inherit (resources.groups) group;
       inherit (pkgs) lib;
+
+      cacheDirectory = "${flowContext.stateDir}/cache-state";
 
       edgeConfiguration = builtins.toFile "fhc-edge.conf" ''
         server {
@@ -166,8 +168,8 @@ flow.new {
                             '$status $body_bytes_sent "$http_referer" '
                             '"$http_user_agent" "$http_x_forwarded_for"';
 
-          access_log  ${flowContext.stateDir}/access.log main;
-          error_log  ${flowContext.stateDir}/error.log main;
+          access_log  ${flowContext.stateDir}/access-main.log main;
+          error_log  ${flowContext.stateDir}/error-main.log main;
 
           sendfile        on;
           #tcp_nopush     on;
@@ -175,7 +177,7 @@ flow.new {
           keepalive_timeout  65;
 
           proxy_cache_path
-            ${this.cacheDirectory}
+            ${cacheDirectory}
             levels=1:2
             keys_zone=fhc:${this.keyZoneSize}
             ${lib.optionalString (this.maxCacheSize != null) "max_size=${this.maxCacheSize}"}
@@ -190,7 +192,7 @@ flow.new {
         set -e
         ${pkgs.coreutils}/bin/install -d \
           -o ${user.name} -g ${group.name} -m 0750 \
-          ${this.cacheDirectory}
+          ${cacheDirectory}
       '';
     in
     {
