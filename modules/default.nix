@@ -27,12 +27,25 @@ let
       # Pass requests for narinfo directly to FlakeHub Cache, but never cache it
       location ~ /.*?\.narinfo$ {
         proxy_pass https://cache.flakehub.com;
+        ${lib.optionalString (
+          cfg.upstreamConnectTimeout != null
+        ) "proxy_connect_timeout ${cfg.upstreamConnectTimeout};"}
+        ${lib.optionalString (
+          cfg.upstreamReadTimeout != null
+        ) "proxy_read_timeout ${cfg.upstreamReadTimeout}; proxy_send_timeout ${cfg.upstreamReadTimeout};"}
+        ${lib.optionalString cfg.narinfoMissOnError "proxy_intercept_errors on; error_page 408 502 503 504 = @narinfo_miss;"}
       }
+      ${lib.optionalString cfg.narinfoMissOnError ''
+        # A 404 here is a clean cache miss to Nix; a 5xx/timeout is not.
+        location @narinfo_miss {
+          return 404;
+        }''}
 
       # Allow caching of any request for a NAR
       location /nar {
         proxy_cache fhc;
         proxy_cache_valid ${cfg.cacheLifetime};
+        ${lib.optionalString cfg.cacheLock "proxy_cache_lock on; proxy_cache_lock_timeout ${cfg.cacheLockTimeout}; proxy_cache_lock_age ${cfg.cacheLockAge};"}
 
         proxy_pass https://cache.flakehub.com;
       }
@@ -59,7 +72,9 @@ let
 
       log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
                         '$status $body_bytes_sent "$http_referer" '
-                        '"$http_user_agent" "$http_x_forwarded_for"';
+                        '"$http_user_agent" "$http_x_forwarded_for"${
+                          lib.optionalString (cfg.extraLogFields != "") " ${cfg.extraLogFields}"
+                        }';
 
       access_log  /var/log/nginx/access.log main;
 
@@ -74,6 +89,7 @@ let
         levels=1:2
         use_temp_path=${if cfg.tempDirectory != null then "on" else "off"}
         keys_zone=fhc:${cfg.keyZoneSize}
+        ${lib.optionalString (cfg.cacheInactive != null) "inactive=${cfg.cacheInactive}"}
         ${lib.optionalString (cfg.maxCacheSize != null) "max_size=${cfg.maxCacheSize}"}
         ${lib.optionalString (cfg.minCacheFree != null) "min_free=${cfg.minCacheFree}"}
         ;
@@ -103,10 +119,89 @@ in
       description = "Listen directive for nginx. All servers are given as the default server.";
     };
 
+    extraLogFields = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      example = "cache=$upstream_cache_status request_time=$request_time";
+      description = ''
+        Extra fields appended to the access log_format. A pull-through cache
+        needs $upstream_cache_status (and friends) for observability, but the
+        default format omits them.
+      '';
+    };
+
     cacheLifetime = lib.mkOption {
       type = nginxDurationType;
       default = "7d";
       description = "Lifetime in nginx's cache for successful responses.";
+    };
+
+    cacheInactive = lib.mkOption {
+      type = lib.types.nullOr nginxDurationType;
+      default = null;
+      description = ''
+        Sets proxy_cache_path inactive=: how long a cached object may go
+        unaccessed before nginx evicts it, independent of freshness. Defaults to
+        null, leaving nginx's own default (10 minutes). nginx evicts the working
+        set between bursts of traffic at that default, so a bursty pull-through
+        cache of immutable NARs typically wants this set to cacheLifetime.
+      '';
+    };
+
+    upstreamConnectTimeout = lib.mkOption {
+      type = lib.types.nullOr nginxDurationType;
+      default = null;
+      description = "Connect timeout for the narinfo passthrough to cache.flakehub.com. Null uses nginx's default.";
+    };
+
+    upstreamReadTimeout = lib.mkOption {
+      type = lib.types.nullOr nginxDurationType;
+      default = null;
+      description = ''
+        Read/send timeout for the narinfo passthrough to cache.flakehub.com.
+        Null uses nginx's default (60s). Pair with narinfoMissOnError so a slow
+        origin becomes a clean miss rather than a 504 surfaced to the client.
+      '';
+    };
+
+    narinfoMissOnError = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Translate an upstream narinfo failure (408/502/503/504) into a 404. Nix
+        treats 404 as a miss and falls through to its other substituters,
+        whereas a 5xx/timeout is a hard error it can fail the build on.
+      '';
+    };
+
+    cacheLock = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Enable proxy_cache_lock for NAR requests so concurrent requests for the
+        same uncached NAR don't all stampede the origin; only the first
+        populates the cache and the rest wait for it.
+      '';
+    };
+
+    cacheLockTimeout = lib.mkOption {
+      type = nginxDurationType;
+      default = "5s";
+      description = ''
+        proxy_cache_lock_timeout: how long a request waits on the lock before
+        fetching from the origin itself. Raise above your slowest NAR fetch or
+        waiters will stampede anyway.
+      '';
+    };
+
+    cacheLockAge = lib.mkOption {
+      type = nginxDurationType;
+      default = "5s";
+      description = ''
+        proxy_cache_lock_age: if the populating request runs longer than this,
+        another request is allowed to the origin. Raise alongside
+        cacheLockTimeout above your slowest NAR fetch.
+      '';
     };
 
     keyZoneSize = lib.mkOption {

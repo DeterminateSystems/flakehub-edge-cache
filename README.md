@@ -11,7 +11,15 @@
   - [`flakehubEdgeCache.nginx`](#flakehubedgecachenginx)
   - [`flakehubEdgeCache.dnsResolvers`](#flakehubedgecachednsresolvers)
   - [`flakehubEdgeCache.listen`](#flakehubedgecachelisten)
+  - [`flakehubEdgeCache.extraLogFields`](#flakehubedgecacheextralogfields)
   - [`flakehubEdgeCache.cacheLifetime`](#flakehubedgecachecachelifetime)
+  - [`flakehubEdgeCache.cacheInactive`](#flakehubedgecachecacheinactive)
+  - [`flakehubEdgeCache.upstreamConnectTimeout`](#flakehubedgecacheupstreamconnecttimeout)
+  - [`flakehubEdgeCache.upstreamReadTimeout`](#flakehubedgecacheupstreamreadtimeout)
+  - [`flakehubEdgeCache.narinfoMissOnError`](#flakehubedgecachenarinfomissonerror)
+  - [`flakehubEdgeCache.cacheLock`](#flakehubedgecachecachelock)
+  - [`flakehubEdgeCache.cacheLockTimeout`](#flakehubedgecachecachelocktimeout)
+  - [`flakehubEdgeCache.cacheLockAge`](#flakehubedgecachecachelockage)
   - [`flakehubEdgeCache.keyZoneSize`](#flakehubedgecachekeyzonesize)
   - [`flakehubEdgeCache.minCacheFree`](#flakehubedgecachemincachefree)
   - [`flakehubEdgeCache.maxCacheSize`](#flakehubedgecachemaxcachesize)
@@ -77,6 +85,15 @@ This defaults to the systemd-resolved address, but nginx can be directed to use 
 Corresponds to the address(es) in nginx's [`listen` directive](https://nginx.org/en/docs/http/ngx_http_core_module.html#listen).
 The `default_server` option is always set for each address.
 
+### `flakehubEdgeCache.extraLogFields`
+
+* Type: string
+* Default: `""`
+
+Extra fields appended to nginx's access `log_format`.
+A pull-through cache needs `$upstream_cache_status` (and related variables) for hit-ratio and egress observability, but the default format omits them.
+Example: `cache=$upstream_cache_status request_time=$request_time`.
+
 ### `flakehubEdgeCache.cacheLifetime`
 
 * Type: string that matches nginx's duration types (a number ending in `d`, `h`, `m`, or `s`).
@@ -84,6 +101,66 @@ The `default_server` option is always set for each address.
 
 When downloading a NAR, successful responses from FlakeHub cache (200, 301, or 302) will be kept in nginx's cache for this duration.
 No other responses are cached.
+
+### `flakehubEdgeCache.cacheInactive`
+
+* Type: nullable string that matches nginx's duration types.
+* Default: `null`
+
+Sets the [`inactive=`](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache_path) parameter on `proxy_cache_path`: a cached object not *accessed* within this duration is evicted regardless of its freshness.
+When `null` (the default), nginx uses its own default of 10 minutes, which evicts the working set between bursts of traffic.
+Since NAR content is immutable, a bursty pull-through cache typically wants this set to `cacheLifetime`.
+Note that lengthening retention lets the cache grow larger, so set [`maxCacheSize`](#flakehubedgecachemaxcachesize) accordingly.
+
+### `flakehubEdgeCache.upstreamConnectTimeout`
+
+* Type: nullable string that matches nginx's duration types.
+* Default: `null`
+
+If non-null, sets `proxy_connect_timeout` on the narinfo passthrough to FlakeHub Cache.
+`null` uses nginx's default.
+
+### `flakehubEdgeCache.upstreamReadTimeout`
+
+* Type: nullable string that matches nginx's duration types.
+* Default: `null`
+
+If non-null, sets `proxy_read_timeout` and `proxy_send_timeout` on the narinfo passthrough to FlakeHub Cache.
+`null` uses nginx's default (60s).
+Pair with [`narinfoMissOnError`](#flakehubedgecachenarinfomissonerror) so a slow origin becomes a clean cache miss rather than a 504 surfaced to the Nix client.
+
+### `flakehubEdgeCache.narinfoMissOnError`
+
+* Type: boolean
+* Default: `false`
+
+When true, an upstream narinfo failure (`408`, `502`, `503`, `504`) is translated into a `404`.
+Nix treats `404` as a cache miss and falls through to its other substituters, whereas a `5xx`/timeout is a hard error it retries against this cache and can fail the build on.
+
+### `flakehubEdgeCache.cacheLock`
+
+* Type: boolean
+* Default: `false`
+
+When true, enables [`proxy_cache_lock`](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache_lock) for NAR requests, so concurrent requests for the same uncached NAR don't all stampede FlakeHub Cache: only the first populates the cache and the rest wait for it.
+
+### `flakehubEdgeCache.cacheLockTimeout`
+
+* Type: string that matches nginx's duration types.
+* Default: `"5s"`
+
+Sets [`proxy_cache_lock_timeout`](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache_lock_timeout): how long a request waits on the lock before fetching from the origin itself.
+Only applies when [`cacheLock`](#flakehubedgecachecachelock) is enabled.
+Raise this above your slowest NAR fetch, or waiters will stampede the origin anyway (nginx's default is 5s).
+
+### `flakehubEdgeCache.cacheLockAge`
+
+* Type: string that matches nginx's duration types.
+* Default: `"5s"`
+
+Sets [`proxy_cache_lock_age`](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache_lock_age): if the request populating the cache runs longer than this, another request is allowed through to the origin.
+Only applies when [`cacheLock`](#flakehubedgecachecachelock) is enabled.
+Raise this alongside `cacheLockTimeout`.
 
 ### `flakehubEdgeCache.keyZoneSize`
 

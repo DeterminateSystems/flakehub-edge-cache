@@ -67,6 +67,18 @@ nixpkgs.lib.nixosSystem {
         workerGroupName = "fec-custom";
 
         tempDirectory = null;
+
+        extraLogFields = "cache=$upstream_cache_status request_time=$request_time";
+
+        cacheInactive = "30d";
+
+        upstreamConnectTimeout = "5s";
+        upstreamReadTimeout = "10s";
+        narinfoMissOnError = true;
+
+        cacheLock = true;
+        cacheLockTimeout = "60s";
+        cacheLockAge = "60s";
       };
     }
   ];
