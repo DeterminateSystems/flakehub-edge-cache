@@ -35,11 +35,11 @@ inputs.minnows.lib.minnowsSystem {
 
   resources = {
     users.hello-minnows = {
-      uid = 7;
+      uid = 101;
     };
 
     groups.hello-minnows = {
-      gid = 7;
+      gid = 101;
     };
 
     devices.console = {
@@ -60,9 +60,10 @@ inputs.minnows.lib.minnowsSystem {
   };
 
   flows.fec1 = {
-    definition = import ../../flow.nix { inherit inputs; };
+    definition = import ../default.nix { inherit inputs; };
     config = {
       nginx = inputs.nixpkgs.legacyPackages.${system}.nginx;
+      # dnsResolvers = [ "1.1.1.1" ];
     };
     grantedCapabilities.runAsRoot = true;
     grantedCapabilities.fullFilesystemAccess = true;

@@ -3,7 +3,7 @@
     nixpkgs.follows = "minnows/nixpkgs";
 
     #minnows.url = "https://flakehub.com/f/DeterminateSystems/minnows/*";
-    minnows.url = "git+ssh://git@github.com:DeterminateSystems/minnows?ref=colemickens/vmtest-fetch-logs";
+    minnows.url = "git+ssh://git@github.com/DeterminateSystems/minnows?ref=colemickens/integrate";
     minnows-platform-qemu.url = "https://flakehub.com/f/DeterminateSystems/minnows-platform-qemu/*";
     minnows-flow-debug-shell.url = "https://flakehub.com/f/DeterminateSystems/minnows-flow-debug-shell/*";
   };
@@ -60,6 +60,7 @@
               "${minnows-cli}/bin/minnows-cli" run vmtest \
                 --disk "''${disk}" \
                 --var-store "''${sbdir}/vars.json" \
+                --wait-time 60 \
                 --expect-success "flow-fec1-flakehub-edge-cache.service"
 
               touch $out

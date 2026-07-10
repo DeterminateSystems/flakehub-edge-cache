@@ -12,7 +12,8 @@ flow.new {
       "cache"
       "flakehub-edge"
     ];
-    docs = ./README.md;
+
+    docs = "FEC is Fully Excellent (and) Cool";
 
     examples = [ ];
   };
@@ -106,18 +107,22 @@ flow.new {
     {
       this,
       flowContext,
-      pkgs,
       resources,
       ...
-    }:
+    }@impl:
     let
+      pkgs = import inputs.nixpkgs {
+        system = impl.pkgs.system;
+      };
       inherit (resources.users) user;
       inherit (resources.groups) group;
       inherit (resources.listeningPorts) listeningPort;
       inherit (pkgs) lib;
 
       cacheDirectory = "${flowContext.stateDir}/cache-state";
-      errorLogLocation = "${flowContext.stateDir}/error.log";
+      logLocation = "syslog:server=unix:/dev/log";
+      # startupErrorLogLocation = "${flowContext.stateDir}/start-error.log";
+      startupErrorLogLocation = "stderr";
 
       listenAddrs =
         let
@@ -163,7 +168,7 @@ flow.new {
       '';
 
       nginxConfiguration = builtins.toFile "fhc-edge-nginx.conf" ''
-        error_log ${errorLogLocation};
+        error_log ${logLocation};
 
         # Run workers under the edge cache user
         user ${user.name};
@@ -183,8 +188,7 @@ flow.new {
           log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
                             '$status $body_bytes_sent "$http_referer" '
                             '"$http_user_agent" "$http_x_forwarded_for"';
-
-          access_log  ${flowContext.stateDir}/access.log main;
+          access_log ${logLocation} main;
 
           sendfile        on;
           #tcp_nopush     on;
@@ -209,13 +213,30 @@ flow.new {
           -o ${user.name} -g ${group.name} -m 0750 \
           ${cacheDirectory}
       '';
+
+      startScript = pkgs.writeShellScript "start-nginx.sh" ''
+        ${lib.getExe this.nginx} -e "${startupErrorLogLocation}" -c "${nginxConfiguration}"
+      '';
     in
     {
       systemd.services.flakehub-edge-cache = {
-        Service.ExecStartPre = [
-          "+${pkgs.bash}/bin/sh ${preStartScriptRoot}"
-        ];
-        Service.ExecStart = "${lib.getExe this.nginx} -e \"${errorLogLocation}\" -c \"${nginxConfiguration}\"";
+        Service = {
+          ExecStartPre = [
+            "+${pkgs.bash}/bin/sh ${preStartScriptRoot}"
+          ];
+          ExecStart = "${pkgs.bash}/bin/sh ${startScript}";
+          Restart = "no";
+        };
+        Unit = {
+          After = [
+            "network.target"
+            "dbus.service"
+            "network-online.target"
+          ];
+          Wants = [
+            "network-online.target"
+          ];
+        };
       };
     };
 }

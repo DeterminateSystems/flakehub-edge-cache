@@ -43,6 +43,8 @@
         inherit inputs;
       };
 
+      minnowsFlows.default = import ./flow.nix { inherit inputs; };
+
       formatter = forEachSystem (pkgs: pkgs.nixfmt);
 
       devShells = forEachSystem (pkgs: {
