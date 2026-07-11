@@ -17,8 +17,13 @@ let
       # Ignored by nginx since we're using default_server for our listening
       server_name _;
 
-      # Allow nginx to do DNS resolution of the cache address
-      resolver ${toString cfg.dnsResolvers} valid=5s ipv4=on ipv6=on;
+      # Resolve the cache address per request so address changes do not require an nginx reload.
+      resolver ${toString cfg.dnsResolvers} valid=5s ipv4=on ipv6=${
+        if cfg.dnsResolverIPv6 then "on" else "off"
+      };
+      ${lib.optionalString (
+        cfg.upstreamConnectTimeout != null
+      ) "resolver_timeout ${cfg.upstreamConnectTimeout};"}
 
       location = /nix-cache-info {
         return 200 "WantMassQuery: 1\nStoreDir: /nix/store\nPriority: 30\n"; # Higher priority than FHC (39) and cache.nixos.org (40)
@@ -26,7 +31,14 @@ let
 
       # Pass requests for narinfo directly to FlakeHub Cache, but never cache it
       location ~ /.*?\.narinfo$ {
-        proxy_pass https://cache.flakehub.com;
+        set $fhc_upstream https://cache.flakehub.com;
+        proxy_pass $fhc_upstream;
+        proxy_ssl_server_name on;
+        proxy_ssl_name cache.flakehub.com;
+        ${lib.optionalString cfg.sslVerify "proxy_ssl_verify on;"}
+        ${lib.optionalString cfg.sslVerify "proxy_ssl_trusted_certificate \"${cfg.sslTrustedCertificate}\";"}
+        ${lib.optionalString cfg.sslVerify "proxy_ssl_verify_depth ${toString cfg.sslVerifyDepth};"}
+        proxy_set_header Host cache.flakehub.com;
         ${lib.optionalString (
           cfg.upstreamConnectTimeout != null
         ) "proxy_connect_timeout ${cfg.upstreamConnectTimeout};"}
@@ -38,6 +50,7 @@ let
       ${lib.optionalString cfg.narinfoMissOnError ''
         # A 404 here is a clean cache miss to Nix; a 5xx/timeout is not.
         location @narinfo_miss {
+          add_header X-FEC-Miss-Reason $upstream_status always;
           return 404;
         }''}
 
@@ -47,13 +60,20 @@ let
         proxy_cache_valid ${cfg.cacheLifetime};
         ${lib.optionalString cfg.cacheLock "proxy_cache_lock on; proxy_cache_lock_timeout ${cfg.cacheLockTimeout}; proxy_cache_lock_age ${cfg.cacheLockAge};"}
 
-        proxy_pass https://cache.flakehub.com;
+        set $fhc_upstream https://cache.flakehub.com;
+        proxy_pass $fhc_upstream;
+        proxy_ssl_server_name on;
+        proxy_ssl_name cache.flakehub.com;
+        ${lib.optionalString cfg.sslVerify "proxy_ssl_verify on;"}
+        ${lib.optionalString cfg.sslVerify "proxy_ssl_trusted_certificate \"${cfg.sslTrustedCertificate}\";"}
+        ${lib.optionalString cfg.sslVerify "proxy_ssl_verify_depth ${toString cfg.sslVerifyDepth};"}
+        proxy_set_header Host cache.flakehub.com;
       }
     }
   '';
 
   nginxConfiguration = builtins.toFile "fhc-edge-nginx.conf" ''
-    error_log /var/log/nginx/error.log;
+    error_log ${cfg.errorLog};
 
     # Run workers under the edge cache user
     user ${cfg.workerUserName};
@@ -74,7 +94,7 @@ let
                         '$status $body_bytes_sent "$http_referer" '
                         '"$http_user_agent" "$http_x_forwarded_for"${
                           lib.optionalString (cfg.extraLogFields != "") " ${cfg.extraLogFields}"
-                        }';
+                        } upstream_status=$upstream_status upstream_addr=$upstream_addr upstream_connect_time=$upstream_connect_time';
 
       access_log  /var/log/nginx/access.log main;
 
@@ -110,6 +130,12 @@ in
       description = "List of IP addresses for nginx to use when resolving the cache.flakehub.com address.";
     };
 
+    dnsResolverIPv6 = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Whether nginx should request IPv6 addresses when resolving cache.flakehub.com.";
+    };
+
     listen = lib.mkOption {
       type = with lib.types; listOf str;
       default = [
@@ -122,12 +148,45 @@ in
     extraLogFields = lib.mkOption {
       type = lib.types.str;
       default = "";
-      example = "cache=$upstream_cache_status request_time=$request_time";
+      example = "cache=$upstream_cache_status upstream_bytes=$upstream_bytes_received request_time=$request_time";
       description = ''
         Extra fields appended to the access log_format. A pull-through cache
         needs $upstream_cache_status (and friends) for observability, but the
         default format omits them.
       '';
+    };
+
+    errorLog = lib.mkOption {
+      type = lib.types.str;
+      default = "/var/log/nginx/error.log";
+      example = "stderr";
+      description = ''
+        Destination for nginx's error log. Set to stderr to send errors through
+        the service manager's standard error stream for journal-based log
+        collection.
+      '';
+    };
+
+    sslVerify = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Whether nginx should verify the FlakeHub Cache TLS certificate.";
+    };
+
+    sslTrustedCertificate = lib.mkOption {
+      type = lib.types.str;
+      default = "/etc/ssl/certs/ca-bundle.crt";
+      description = ''
+        Path to the CA bundle nginx should use when verifying FlakeHub Cache.
+        The default is the standard NixOS CA bundle path; override it on systems
+        that install the bundle elsewhere.
+      '';
+    };
+
+    sslVerifyDepth = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 2;
+      description = "Maximum verification depth for the FlakeHub Cache TLS certificate chain.";
     };
 
     cacheLifetime = lib.mkOption {
@@ -151,7 +210,11 @@ in
     upstreamConnectTimeout = lib.mkOption {
       type = lib.types.nullOr nginxDurationType;
       default = null;
-      description = "Connect timeout for the narinfo passthrough to cache.flakehub.com. Null uses nginx's default.";
+      description = ''
+        DNS resolution timeout for all upstream requests and connect timeout for
+        the narinfo passthrough to cache.flakehub.com. Null uses nginx's
+        defaults.
+      '';
     };
 
     upstreamReadTimeout = lib.mkOption {

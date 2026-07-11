@@ -58,6 +58,7 @@ nixpkgs.lib.nixosSystem {
           "8.8.8.8"
           "8.8.4.4"
         ];
+        dnsResolverIPv6 = false;
 
         keyZoneSize = "5m";
 
@@ -68,7 +69,8 @@ nixpkgs.lib.nixosSystem {
 
         tempDirectory = null;
 
-        extraLogFields = "cache=$upstream_cache_status request_time=$request_time";
+        extraLogFields = "cache=$upstream_cache_status upstream_bytes=$upstream_bytes_received request_time=$request_time";
+        errorLog = "stderr";
 
         cacheInactive = "30d";
 

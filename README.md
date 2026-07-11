@@ -10,8 +10,13 @@
   - [`flakehubEdgeCache.enable`](#flakehubedgecacheenable)
   - [`flakehubEdgeCache.nginx`](#flakehubedgecachenginx)
   - [`flakehubEdgeCache.dnsResolvers`](#flakehubedgecachednsresolvers)
+  - [`flakehubEdgeCache.dnsResolverIPv6`](#flakehubedgecachednsresolveripv6)
   - [`flakehubEdgeCache.listen`](#flakehubedgecachelisten)
   - [`flakehubEdgeCache.extraLogFields`](#flakehubedgecacheextralogfields)
+  - [`flakehubEdgeCache.errorLog`](#flakehubedgecacheerrorlog)
+  - [`flakehubEdgeCache.sslVerify`](#flakehubedgecachesslverify)
+  - [`flakehubEdgeCache.sslTrustedCertificate`](#flakehubedgecachessltrustedcertificate)
+  - [`flakehubEdgeCache.sslVerifyDepth`](#flakehubedgecachesslverifydepth)
   - [`flakehubEdgeCache.cacheLifetime`](#flakehubedgecachecachelifetime)
   - [`flakehubEdgeCache.cacheInactive`](#flakehubedgecachecacheinactive)
   - [`flakehubEdgeCache.upstreamConnectTimeout`](#flakehubedgecacheupstreamconnecttimeout)
@@ -75,7 +80,16 @@ Which `nginx` package to use for the local cache server.
 * Default: `["127.0.0.1"]`
 
 For nginx's proxy logic to work, DNS resolvers are required.
-This defaults to the systemd-resolved address, but nginx can be directed to use any DNS resolver (such as Google public DNS or one on an internal network).
+This defaults to localhost, but nginx can be directed to use any DNS resolver (such as Google public DNS or one on an internal network).
+Ensure that a resolver is listening at one of the configured addresses; nginx uses these resolvers for each request instead of resolving FlakeHub Cache only when it starts.
+
+### `flakehubEdgeCache.dnsResolverIPv6`
+
+* Type: boolean
+* Default: `true`
+
+Whether nginx requests IPv6 addresses when resolving FlakeHub Cache.
+Disable this when the cache host has no working IPv6 route.
 
 ### `flakehubEdgeCache.listen`
 
@@ -92,7 +106,39 @@ The `default_server` option is always set for each address.
 
 Extra fields appended to nginx's access `log_format`.
 A pull-through cache needs `$upstream_cache_status` (and related variables) for hit-ratio and egress observability, but the default format omits them.
-Example: `cache=$upstream_cache_status request_time=$request_time`.
+Example: `cache=$upstream_cache_status upstream_bytes=$upstream_bytes_received request_time=$request_time`.
+The default format always includes `upstream_status=$upstream_status`, `upstream_addr=$upstream_addr`, and `upstream_connect_time=$upstream_connect_time` so upstream failures and connection attempts remain visible when nginx returns a different response to the client.
+
+### `flakehubEdgeCache.errorLog`
+
+* Type: string
+* Default: `"/var/log/nginx/error.log"`
+
+The destination for nginx's error log.
+Set this to `"stderr"` to send errors through the service manager's standard error stream for collection from the system journal.
+
+### `flakehubEdgeCache.sslVerify`
+
+* Type: boolean
+* Default: `true`
+
+Whether nginx verifies the FlakeHub Cache TLS certificate.
+When enabled, nginx uses `sslTrustedCertificate` and `sslVerifyDepth` for verification.
+
+### `flakehubEdgeCache.sslTrustedCertificate`
+
+* Type: string
+* Default: `"/etc/ssl/certs/ca-bundle.crt"`
+
+The CA bundle nginx uses to verify FlakeHub Cache.
+The default is the standard NixOS CA bundle path; override it on systems that install the bundle elsewhere.
+
+### `flakehubEdgeCache.sslVerifyDepth`
+
+* Type: positive integer
+* Default: `2`
+
+The maximum verification depth for the FlakeHub Cache TLS certificate chain.
 
 ### `flakehubEdgeCache.cacheLifetime`
 
@@ -117,8 +163,8 @@ Note that lengthening retention lets the cache grow larger, so set [`maxCacheSiz
 * Type: nullable string that matches nginx's duration types.
 * Default: `null`
 
-If non-null, sets `proxy_connect_timeout` on the narinfo passthrough to FlakeHub Cache.
-`null` uses nginx's default.
+If non-null, sets `resolver_timeout` for all upstream requests and `proxy_connect_timeout` on the narinfo passthrough to FlakeHub Cache.
+`null` uses nginx's defaults.
 
 ### `flakehubEdgeCache.upstreamReadTimeout`
 
@@ -136,6 +182,7 @@ Pair with [`narinfoMissOnError`](#flakehubedgecachenarinfomissonerror) so a slow
 
 When true, an upstream narinfo failure (`408`, `502`, `503`, `504`) is translated into a `404`.
 Nix treats `404` as a cache miss and falls through to its other substituters, whereas a `5xx`/timeout is a hard error it retries against this cache and can fail the build on.
+The response includes the original upstream status in the `X-FEC-Miss-Reason` header for troubleshooting.
 
 ### `flakehubEdgeCache.cacheLock`
 
