@@ -215,6 +215,48 @@ flow.new {
       '';
 
       startScript = pkgs.writeShellScript "start-nginx.sh" ''
+        set -x
+
+        if false; then
+          systemctl status systemd-networkd-wait-online.service
+          echo $?
+          systemctl status network-online.target
+          echo $?
+          systemctl status nss-lookup.target
+          echo $?
+          systemctl status systemd-resolved.service
+          echo $?
+          networkctl
+          echo $?
+          networkctl status
+          echo $?
+          ${pkgs.iproute2}/bin/ip a
+          echo $?
+          ${pkgs.systemd}/bin/resolvectl status
+          echo $?
+          ${pkgs.systemd}/bin/resolvectl query cache.flakehub.com
+          echo $?
+
+          ${pkgs.iputils}/bin/ping -4 google.com
+          ${pkgs.iputils}/bin/ping -6 google.com
+          ${pkgs.iputils}/bin/ping -4 cache.flakehub.com
+          ${pkgs.iputils}/bin/ping -6 cache.flakehub.com
+
+          ${pkgs.coreutils}/bin/sleep 10
+          echo $?
+
+          ${pkgs.iproute2}/bin/ip a
+          echo $?
+          ${pkgs.systemd}/bin/resolvectl status
+          echo $?
+          networkctl
+          echo $?
+          networkctl status
+          echo $?
+          ${pkgs.systemd}/bin/resolvectl query cache.flakehub.com
+          echo $?
+        fi
+
         ${lib.getExe this.nginx} -e "${startupErrorLogLocation}" -c "${nginxConfiguration}"
       '';
     in
