@@ -63,7 +63,7 @@ flow.new {
       dnsResolvers = {
         description = "List of IP addresses for nginx to use when resolving the cache.flakehub.com address.";
         type = flow.lib.types.listOf flow.lib.types.str;
-        default = [ "127.0.0.1" ];
+        default = [ "127.0.0.1 valid=5s ipv4=on ipv6=on" ];
       };
 
       cacheLifetime = {
@@ -146,7 +146,7 @@ flow.new {
           server_name _;
 
           # Allow nginx to do DNS resolution of the cache address
-          resolver ${toString this.dnsResolvers} valid=5s ipv4=on ipv6=on;
+          ${lib.concatMapStringsSep "\n  " (r: "resolver ${r};") this.dnsResolvers}
 
           location = /nix-cache-info {
             return 200 "WantMassQuery: 1\nStoreDir: /nix/store\nPriority: 30\n"; # Higher priority than FHC (39) and cache.nixos.org (40)
