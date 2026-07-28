@@ -143,6 +143,11 @@ flow.new {
             port
             "[::]:${port}"
           ];
+      cfg = this // {
+        addr = listenAddrs;
+      };
+
+      # paste in after rebase
 
       edgeConfiguration = builtins.toFile "fhc-edge.conf" ''
         server {
@@ -171,6 +176,11 @@ flow.new {
 
             set $empty "";
             proxy_pass ${this.upstream}$empty;
+          }
+
+          # Ignore log requests
+          location /log {
+            return 404;
           }
         }
       '';
