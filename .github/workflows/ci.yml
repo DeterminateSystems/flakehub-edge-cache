@@ -27,10 +27,6 @@ jobs:
       - uses: DeterminateSystems/determinate-nix-action@main
       - uses: DeterminateSystems/flakehub-cache-action@main
 
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: ${{ secrets.LOL_DETSYS_CI_SSH_PRIVATE_KEY }}
-
       - name: Check Nix formatting
         run: git ls-files '*.nix' | nix develop --command xargs nixfmt --check
 
