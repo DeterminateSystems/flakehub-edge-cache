@@ -2,8 +2,7 @@
   inputs = {
     nixpkgs.follows = "minnows/nixpkgs";
 
-    #minnows.url = "https://flakehub.com/f/DeterminateSystems/minnows/*";
-    minnows.url = "git+ssh://git@github.com/DeterminateSystems/minnows?ref=colemickens/integrate";
+    minnows.url = "https://flakehub.com/f/DeterminateSystems/minnows/*";
     minnows-platform-qemu.url = "https://flakehub.com/f/DeterminateSystems/minnows-platform-qemu/*";
     minnows-flow-debug-shell.url = "https://flakehub.com/f/DeterminateSystems/minnows-flow-debug-shell/*";
   };

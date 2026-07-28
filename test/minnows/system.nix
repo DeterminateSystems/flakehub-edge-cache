@@ -60,7 +60,7 @@ inputs.minnows.lib.minnowsSystem {
   };
 
   flows.fec1 = {
-    definition = import ../default.nix { inherit inputs; };
+    definition = import ../../flow.nix { inherit inputs; };
     config = {
       nginx = inputs.nixpkgs.legacyPackages.${system}.nginx;
       # dnsResolvers = [ "1.1.1.1" ];
