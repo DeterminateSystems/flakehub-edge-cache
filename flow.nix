@@ -60,10 +60,16 @@ flow.new {
         type = flow.lib.types.package;
       };
 
+      upstream = {
+        description = "Default upstream FlakeHub Cache base URL.";
+        type = flow.lib.types.str;
+        default = "https://cache.flakehub.com";
+      };
+
       dnsResolvers = {
         description = "List of IP addresses for nginx to use when resolving the cache.flakehub.com address.";
         type = flow.lib.types.listOf flow.lib.types.str;
-        default = [ "127.0.0.1 valid=5s ipv4=on ipv6=on" ];
+        default = [ "127.0.0.53 valid=5s ipv4=on ipv6=on" ];
       };
 
       cacheLifetime = {
@@ -154,7 +160,8 @@ flow.new {
 
           # Pass requests for narinfo directly to FlakeHub Cache, but never cache it
           location ~ /.*?\.narinfo$ {
-            proxy_pass https://cache.flakehub.com;
+            set $empty "";
+            proxy_pass ${this.upstream}$empty;
           }
 
           # Allow caching of any request for a NAR
@@ -162,7 +169,8 @@ flow.new {
             proxy_cache fhc;
             proxy_cache_valid ${this.cacheLifetime};
 
-            proxy_pass https://cache.flakehub.com;
+            set $empty "";
+            proxy_pass ${this.upstream}$empty;
           }
         }
       '';
