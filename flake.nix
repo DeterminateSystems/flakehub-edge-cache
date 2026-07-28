@@ -2,7 +2,7 @@
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/DeterminateSystems/nixpkgs-weekly/*";
 
-    determinate.url = "github:DeterminateSystems/determinate/v3.15.2";
+    determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
     determinate.inputs = {
       nixpkgs.follows = "nixpkgs";
     };
