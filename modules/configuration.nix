@@ -100,6 +100,10 @@ pkgs.writeText "fhc-edge-nginx.conf" ''
           cfg.upstreamResolveTimeout != null
         ) "proxy_connect_timeout ${cfg.upstreamResolveTimeout};"}
       }
+
+      location /log {
+        return 404;
+      }
     }
   }
 ''
