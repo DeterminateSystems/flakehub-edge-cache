@@ -69,14 +69,10 @@ nixpkgs.lib.nixosSystem {
 
         tempDirectory = null;
 
-        extraLogFields = "cache=$upstream_cache_status upstream_bytes=$upstream_bytes_received request_time=$request_time";
-        errorLog = "stderr";
-
         cacheInactive = "30d";
 
-        upstreamConnectTimeout = "5s";
+        upstreamResolveTimeout = "5s";
         upstreamReadTimeout = "10s";
-        narinfoMissOnError = true;
 
         cacheLock = true;
         cacheLockTimeout = "60s";

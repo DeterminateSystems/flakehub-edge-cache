@@ -22,8 +22,8 @@ let
         if cfg.dnsResolverIPv6 then "on" else "off"
       };
       ${lib.optionalString (
-        cfg.upstreamConnectTimeout != null
-      ) "resolver_timeout ${cfg.upstreamConnectTimeout};"}
+        cfg.upstreamResolveTimeout != null
+      ) "resolver_timeout ${cfg.upstreamResolveTimeout};"}
 
       location = /nix-cache-info {
         return 200 "WantMassQuery: 1\nStoreDir: /nix/store\nPriority: 30\n"; # Higher priority than FHC (39) and cache.nixos.org (40)
@@ -40,19 +40,12 @@ let
         ${lib.optionalString cfg.sslVerify "proxy_ssl_verify_depth ${toString cfg.sslVerifyDepth};"}
         proxy_set_header Host cache.flakehub.com;
         ${lib.optionalString (
-          cfg.upstreamConnectTimeout != null
-        ) "proxy_connect_timeout ${cfg.upstreamConnectTimeout};"}
+          cfg.upstreamResolveTimeout != null
+        ) "proxy_connect_timeout ${cfg.upstreamResolveTimeout};"}
         ${lib.optionalString (
           cfg.upstreamReadTimeout != null
         ) "proxy_read_timeout ${cfg.upstreamReadTimeout}; proxy_send_timeout ${cfg.upstreamReadTimeout};"}
-        ${lib.optionalString cfg.narinfoMissOnError "proxy_intercept_errors on; error_page 408 502 503 504 = @narinfo_miss;"}
       }
-      ${lib.optionalString cfg.narinfoMissOnError ''
-        # A 404 here is a clean cache miss to Nix; a 5xx/timeout is not.
-        location @narinfo_miss {
-          add_header X-FEC-Miss-Reason $upstream_status always;
-          return 404;
-        }''}
 
       # Allow caching of any request for a NAR
       location /nar {
@@ -68,12 +61,15 @@ let
         ${lib.optionalString cfg.sslVerify "proxy_ssl_trusted_certificate \"${cfg.sslTrustedCertificate}\";"}
         ${lib.optionalString cfg.sslVerify "proxy_ssl_verify_depth ${toString cfg.sslVerifyDepth};"}
         proxy_set_header Host cache.flakehub.com;
+        ${lib.optionalString (
+          cfg.upstreamResolveTimeout != null
+        ) "proxy_connect_timeout ${cfg.upstreamResolveTimeout};"}
       }
     }
   '';
 
   nginxConfiguration = builtins.toFile "fhc-edge-nginx.conf" ''
-    error_log ${cfg.errorLog};
+    error_log stderr;
 
     # Run workers under the edge cache user
     user ${cfg.workerUserName};
@@ -147,23 +143,11 @@ in
 
     extraLogFields = lib.mkOption {
       type = lib.types.str;
-      default = "";
-      example = "cache=$upstream_cache_status upstream_bytes=$upstream_bytes_received request_time=$request_time";
+      default = "cache=$upstream_cache_status upstream_bytes=$upstream_bytes_received request_time=$request_time";
       description = ''
-        Extra fields appended to the access log_format. A pull-through cache
-        needs $upstream_cache_status (and friends) for observability, but the
-        default format omits them.
-      '';
-    };
-
-    errorLog = lib.mkOption {
-      type = lib.types.str;
-      default = "/var/log/nginx/error.log";
-      example = "stderr";
-      description = ''
-        Destination for nginx's error log. Set to stderr to send errors through
-        the service manager's standard error stream for journal-based log
-        collection.
+        Extra fields appended to the access log_format. The default adds the
+        cache observability fields a pull-through cache needs; set to "" for
+        the minimal format or replace it to suit your log pipeline.
       '';
     };
 
@@ -207,13 +191,13 @@ in
       '';
     };
 
-    upstreamConnectTimeout = lib.mkOption {
+    upstreamResolveTimeout = lib.mkOption {
       type = lib.types.nullOr nginxDurationType;
       default = null;
       description = ''
         DNS resolution timeout for all upstream requests and connect timeout for
-        the narinfo passthrough to cache.flakehub.com. Null uses nginx's
-        defaults.
+        the narinfo and NAR passthroughs to cache.flakehub.com. Null uses
+        nginx's defaults.
       '';
     };
 
@@ -222,18 +206,9 @@ in
       default = null;
       description = ''
         Read/send timeout for the narinfo passthrough to cache.flakehub.com.
-        Null uses nginx's default (60s). Pair with narinfoMissOnError so a slow
-        origin becomes a clean miss rather than a 504 surfaced to the client.
-      '';
-    };
-
-    narinfoMissOnError = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = ''
-        Translate an upstream narinfo failure (408/502/503/504) into a 404. Nix
-        treats 404 as a miss and falls through to its other substituters,
-        whereas a 5xx/timeout is a hard error it can fail the build on.
+        Null uses nginx's default (60s). Deliberately narinfo-only: it bounds
+        the gap between reads, so a tight value could abort slow but
+        progressing NAR transfers.
       '';
     };
 
