@@ -17,8 +17,13 @@ let
       # Ignored by nginx since we're using default_server for our listening
       server_name _;
 
-      # Allow nginx to do DNS resolution of the cache address
-      resolver ${toString cfg.dnsResolvers} valid=5s ipv4=on ipv6=on;
+      # Resolve the cache address per request so address changes do not require an nginx reload.
+      resolver ${toString cfg.dnsResolvers} valid=5s ipv4=on ipv6=${
+        if cfg.dnsResolverIPv6 then "on" else "off"
+      };
+      ${lib.optionalString (
+        cfg.upstreamResolveTimeout != null
+      ) "resolver_timeout ${cfg.upstreamResolveTimeout};"}
 
       location = /nix-cache-info {
         return 200 "WantMassQuery: 1\nStoreDir: /nix/store\nPriority: 30\n"; # Higher priority than FHC (39) and cache.nixos.org (40)
@@ -26,21 +31,45 @@ let
 
       # Pass requests for narinfo directly to FlakeHub Cache, but never cache it
       location ~ /.*?\.narinfo$ {
-        proxy_pass https://cache.flakehub.com;
+        set $fhc_upstream https://cache.flakehub.com;
+        proxy_pass $fhc_upstream;
+        proxy_ssl_server_name on;
+        proxy_ssl_name cache.flakehub.com;
+        ${lib.optionalString cfg.sslVerify "proxy_ssl_verify on;"}
+        ${lib.optionalString cfg.sslVerify "proxy_ssl_trusted_certificate \"${cfg.sslTrustedCertificate}\";"}
+        ${lib.optionalString cfg.sslVerify "proxy_ssl_verify_depth ${toString cfg.sslVerifyDepth};"}
+        proxy_set_header Host cache.flakehub.com;
+        ${lib.optionalString (
+          cfg.upstreamResolveTimeout != null
+        ) "proxy_connect_timeout ${cfg.upstreamResolveTimeout};"}
+        ${lib.optionalString (
+          cfg.upstreamReadTimeout != null
+        ) "proxy_read_timeout ${cfg.upstreamReadTimeout}; proxy_send_timeout ${cfg.upstreamReadTimeout};"}
       }
 
       # Allow caching of any request for a NAR
       location /nar {
         proxy_cache fhc;
         proxy_cache_valid ${cfg.cacheLifetime};
+        ${lib.optionalString cfg.cacheLock "proxy_cache_lock on; proxy_cache_lock_timeout ${cfg.cacheLockTimeout}; proxy_cache_lock_age ${cfg.cacheLockAge};"}
 
-        proxy_pass https://cache.flakehub.com;
+        set $fhc_upstream https://cache.flakehub.com;
+        proxy_pass $fhc_upstream;
+        proxy_ssl_server_name on;
+        proxy_ssl_name cache.flakehub.com;
+        ${lib.optionalString cfg.sslVerify "proxy_ssl_verify on;"}
+        ${lib.optionalString cfg.sslVerify "proxy_ssl_trusted_certificate \"${cfg.sslTrustedCertificate}\";"}
+        ${lib.optionalString cfg.sslVerify "proxy_ssl_verify_depth ${toString cfg.sslVerifyDepth};"}
+        proxy_set_header Host cache.flakehub.com;
+        ${lib.optionalString (
+          cfg.upstreamResolveTimeout != null
+        ) "proxy_connect_timeout ${cfg.upstreamResolveTimeout};"}
       }
     }
   '';
 
   nginxConfiguration = builtins.toFile "fhc-edge-nginx.conf" ''
-    error_log /var/log/nginx/error.log;
+    error_log stderr;
 
     # Run workers under the edge cache user
     user ${cfg.workerUserName};
@@ -59,7 +88,9 @@ let
 
       log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
                         '$status $body_bytes_sent "$http_referer" '
-                        '"$http_user_agent" "$http_x_forwarded_for"';
+                        '"$http_user_agent" "$http_x_forwarded_for"${
+                          lib.optionalString (cfg.extraLogFields != "") " ${cfg.extraLogFields}"
+                        } upstream_status=$upstream_status upstream_addr=$upstream_addr upstream_connect_time=$upstream_connect_time';
 
       access_log  /var/log/nginx/access.log main;
 
@@ -74,6 +105,7 @@ let
         levels=1:2
         use_temp_path=${if cfg.tempDirectory != null then "on" else "off"}
         keys_zone=fhc:${cfg.keyZoneSize}
+        ${lib.optionalString (cfg.cacheInactive != null) "inactive=${cfg.cacheInactive}"}
         ${lib.optionalString (cfg.maxCacheSize != null) "max_size=${cfg.maxCacheSize}"}
         ${lib.optionalString (cfg.minCacheFree != null) "min_free=${cfg.minCacheFree}"}
         ;
@@ -94,6 +126,12 @@ in
       description = "List of IP addresses for nginx to use when resolving the cache.flakehub.com address.";
     };
 
+    dnsResolverIPv6 = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Whether nginx should request IPv6 addresses when resolving cache.flakehub.com.";
+    };
+
     listen = lib.mkOption {
       type = with lib.types; listOf str;
       default = [
@@ -103,10 +141,105 @@ in
       description = "Listen directive for nginx. All servers are given as the default server.";
     };
 
+    extraLogFields = lib.mkOption {
+      type = lib.types.str;
+      default = "cache=$upstream_cache_status upstream_bytes=$upstream_bytes_received request_time=$request_time";
+      description = ''
+        Extra fields appended to the access log_format. The default adds the
+        cache observability fields a pull-through cache needs; set to "" for
+        the minimal format or replace it to suit your log pipeline.
+      '';
+    };
+
+    sslVerify = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Whether nginx should verify the FlakeHub Cache TLS certificate.";
+    };
+
+    sslTrustedCertificate = lib.mkOption {
+      type = lib.types.str;
+      default = "/etc/ssl/certs/ca-bundle.crt";
+      description = ''
+        Path to the CA bundle nginx should use when verifying FlakeHub Cache.
+        The default is the standard NixOS CA bundle path; override it on systems
+        that install the bundle elsewhere.
+      '';
+    };
+
+    sslVerifyDepth = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 2;
+      description = "Maximum verification depth for the FlakeHub Cache TLS certificate chain.";
+    };
+
     cacheLifetime = lib.mkOption {
       type = nginxDurationType;
       default = "7d";
       description = "Lifetime in nginx's cache for successful responses.";
+    };
+
+    cacheInactive = lib.mkOption {
+      type = lib.types.nullOr nginxDurationType;
+      default = null;
+      description = ''
+        Sets proxy_cache_path inactive=: how long a cached object may go
+        unaccessed before nginx evicts it, independent of freshness. Defaults to
+        null, leaving nginx's own default (10 minutes). nginx evicts the working
+        set between bursts of traffic at that default, so a bursty pull-through
+        cache of immutable NARs typically wants this set to cacheLifetime.
+      '';
+    };
+
+    upstreamResolveTimeout = lib.mkOption {
+      type = lib.types.nullOr nginxDurationType;
+      default = null;
+      description = ''
+        DNS resolution timeout for all upstream requests and connect timeout for
+        the narinfo and NAR passthroughs to cache.flakehub.com. Null uses
+        nginx's defaults.
+      '';
+    };
+
+    upstreamReadTimeout = lib.mkOption {
+      type = lib.types.nullOr nginxDurationType;
+      default = null;
+      description = ''
+        Read/send timeout for the narinfo passthrough to cache.flakehub.com.
+        Null uses nginx's default (60s). Deliberately narinfo-only: it bounds
+        the gap between reads, so a tight value could abort slow but
+        progressing NAR transfers.
+      '';
+    };
+
+    cacheLock = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Enable proxy_cache_lock for NAR requests so concurrent requests for the
+        same uncached NAR don't all stampede the origin; only the first
+        populates the cache and the rest wait for it.
+      '';
+    };
+
+    cacheLockTimeout = lib.mkOption {
+      type = nginxDurationType;
+      default = "5s";
+      description = ''
+        proxy_cache_lock_timeout: how long a request waits on the lock before
+        fetching from the origin itself. Raise above your slowest NAR fetch or
+        waiters will stampede anyway.
+      '';
+    };
+
+    cacheLockAge = lib.mkOption {
+      type = nginxDurationType;
+      default = "5s";
+      description = ''
+        proxy_cache_lock_age: if the populating request runs longer than this,
+        another request is allowed to the origin. Raise alongside
+        cacheLockTimeout above your slowest NAR fetch.
+      '';
     };
 
     keyZoneSize = lib.mkOption {

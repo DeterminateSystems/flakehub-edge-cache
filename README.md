@@ -10,8 +10,19 @@
   - [`flakehubEdgeCache.enable`](#flakehubedgecacheenable)
   - [`flakehubEdgeCache.nginx`](#flakehubedgecachenginx)
   - [`flakehubEdgeCache.dnsResolvers`](#flakehubedgecachednsresolvers)
+  - [`flakehubEdgeCache.dnsResolverIPv6`](#flakehubedgecachednsresolveripv6)
   - [`flakehubEdgeCache.listen`](#flakehubedgecachelisten)
+  - [`flakehubEdgeCache.extraLogFields`](#flakehubedgecacheextralogfields)
+  - [`flakehubEdgeCache.sslVerify`](#flakehubedgecachesslverify)
+  - [`flakehubEdgeCache.sslTrustedCertificate`](#flakehubedgecachessltrustedcertificate)
+  - [`flakehubEdgeCache.sslVerifyDepth`](#flakehubedgecachesslverifydepth)
   - [`flakehubEdgeCache.cacheLifetime`](#flakehubedgecachecachelifetime)
+  - [`flakehubEdgeCache.cacheInactive`](#flakehubedgecachecacheinactive)
+  - [`flakehubEdgeCache.upstreamResolveTimeout`](#flakehubedgecacheupstreamresolvetimeout)
+  - [`flakehubEdgeCache.upstreamReadTimeout`](#flakehubedgecacheupstreamreadtimeout)
+  - [`flakehubEdgeCache.cacheLock`](#flakehubedgecachecachelock)
+  - [`flakehubEdgeCache.cacheLockTimeout`](#flakehubedgecachecachelocktimeout)
+  - [`flakehubEdgeCache.cacheLockAge`](#flakehubedgecachecachelockage)
   - [`flakehubEdgeCache.keyZoneSize`](#flakehubedgecachekeyzonesize)
   - [`flakehubEdgeCache.minCacheFree`](#flakehubedgecachemincachefree)
   - [`flakehubEdgeCache.maxCacheSize`](#flakehubedgecachemaxcachesize)
@@ -67,7 +78,16 @@ Which `nginx` package to use for the local cache server.
 * Default: `["127.0.0.1"]`
 
 For nginx's proxy logic to work, DNS resolvers are required.
-This defaults to the systemd-resolved address, but nginx can be directed to use any DNS resolver (such as Google public DNS or one on an internal network).
+This defaults to localhost, but nginx can be directed to use any DNS resolver (such as Google public DNS or one on an internal network).
+Ensure that a resolver is listening at one of the configured addresses; nginx uses these resolvers for each request instead of resolving FlakeHub Cache only when it starts.
+
+### `flakehubEdgeCache.dnsResolverIPv6`
+
+* Type: boolean
+* Default: `true`
+
+Whether nginx requests IPv6 addresses when resolving FlakeHub Cache.
+Disable this when the cache host has no working IPv6 route.
 
 ### `flakehubEdgeCache.listen`
 
@@ -77,6 +97,38 @@ This defaults to the systemd-resolved address, but nginx can be directed to use 
 Corresponds to the address(es) in nginx's [`listen` directive](https://nginx.org/en/docs/http/ngx_http_core_module.html#listen).
 The `default_server` option is always set for each address.
 
+### `flakehubEdgeCache.extraLogFields`
+
+* Type: string
+* Default: `"cache=$upstream_cache_status upstream_bytes=$upstream_bytes_received request_time=$request_time"`
+
+Extra fields appended to nginx's access `log_format`.
+The default adds the cache observability fields a pull-through cache needs for hit-ratio and egress metrics; set it to `""` for the minimal format or replace it to suit your log pipeline.
+The format always includes `upstream_status=$upstream_status`, `upstream_addr=$upstream_addr`, and `upstream_connect_time=$upstream_connect_time` so upstream failures and connection attempts remain visible when nginx returns a different response to the client.
+
+### `flakehubEdgeCache.sslVerify`
+
+* Type: boolean
+* Default: `true`
+
+Whether nginx verifies the FlakeHub Cache TLS certificate.
+When enabled, nginx uses `sslTrustedCertificate` and `sslVerifyDepth` for verification.
+
+### `flakehubEdgeCache.sslTrustedCertificate`
+
+* Type: string
+* Default: `"/etc/ssl/certs/ca-bundle.crt"`
+
+The CA bundle nginx uses to verify FlakeHub Cache.
+The default is the standard NixOS CA bundle path; override it on systems that install the bundle elsewhere.
+
+### `flakehubEdgeCache.sslVerifyDepth`
+
+* Type: positive integer
+* Default: `2`
+
+The maximum verification depth for the FlakeHub Cache TLS certificate chain.
+
 ### `flakehubEdgeCache.cacheLifetime`
 
 * Type: string that matches nginx's duration types (a number ending in `d`, `h`, `m`, or `s`).
@@ -84,6 +136,58 @@ The `default_server` option is always set for each address.
 
 When downloading a NAR, successful responses from FlakeHub cache (200, 301, or 302) will be kept in nginx's cache for this duration.
 No other responses are cached.
+
+### `flakehubEdgeCache.cacheInactive`
+
+* Type: nullable string that matches nginx's duration types.
+* Default: `null`
+
+Sets the [`inactive=`](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache_path) parameter on `proxy_cache_path`: a cached object not *accessed* within this duration is evicted regardless of its freshness.
+When `null` (the default), nginx uses its own default of 10 minutes, which evicts the working set between bursts of traffic.
+Since NAR content is immutable, a bursty pull-through cache typically wants this set to `cacheLifetime`.
+Note that lengthening retention lets the cache grow larger, so set [`maxCacheSize`](#flakehubedgecachemaxcachesize) accordingly.
+
+### `flakehubEdgeCache.upstreamResolveTimeout`
+
+* Type: nullable string that matches nginx's duration types.
+* Default: `null`
+
+If non-null, sets `resolver_timeout` for all upstream requests and `proxy_connect_timeout` on the narinfo and NAR passthroughs to FlakeHub Cache.
+`null` uses nginx's defaults.
+
+### `flakehubEdgeCache.upstreamReadTimeout`
+
+* Type: nullable string that matches nginx's duration types.
+* Default: `null`
+
+If non-null, sets `proxy_read_timeout` and `proxy_send_timeout` on the narinfo passthrough to FlakeHub Cache.
+`null` uses nginx's default (60s).
+Deliberately narinfo-only: it bounds the gap between successive reads, so a tight value could abort slow but progressing NAR transfers.
+
+### `flakehubEdgeCache.cacheLock`
+
+* Type: boolean
+* Default: `false`
+
+When true, enables [`proxy_cache_lock`](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache_lock) for NAR requests, so concurrent requests for the same uncached NAR don't all stampede FlakeHub Cache: only the first populates the cache and the rest wait for it.
+
+### `flakehubEdgeCache.cacheLockTimeout`
+
+* Type: string that matches nginx's duration types.
+* Default: `"5s"`
+
+Sets [`proxy_cache_lock_timeout`](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache_lock_timeout): how long a request waits on the lock before fetching from the origin itself.
+Only applies when [`cacheLock`](#flakehubedgecachecachelock) is enabled.
+Raise this above your slowest NAR fetch, or waiters will stampede the origin anyway (nginx's default is 5s).
+
+### `flakehubEdgeCache.cacheLockAge`
+
+* Type: string that matches nginx's duration types.
+* Default: `"5s"`
+
+Sets [`proxy_cache_lock_age`](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache_lock_age): if the request populating the cache runs longer than this, another request is allowed through to the origin.
+Only applies when [`cacheLock`](#flakehubedgecachecachelock) is enabled.
+Raise this alongside `cacheLockTimeout`.
 
 ### `flakehubEdgeCache.keyZoneSize`
 

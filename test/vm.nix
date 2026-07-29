@@ -58,6 +58,7 @@ nixpkgs.lib.nixosSystem {
           "8.8.8.8"
           "8.8.4.4"
         ];
+        dnsResolverIPv6 = false;
 
         keyZoneSize = "5m";
 
@@ -67,6 +68,15 @@ nixpkgs.lib.nixosSystem {
         workerGroupName = "fec-custom";
 
         tempDirectory = null;
+
+        cacheInactive = "30d";
+
+        upstreamResolveTimeout = "5s";
+        upstreamReadTimeout = "10s";
+
+        cacheLock = true;
+        cacheLockTimeout = "60s";
+        cacheLockAge = "60s";
       };
     }
   ];
