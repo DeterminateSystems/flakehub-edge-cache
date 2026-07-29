@@ -5,7 +5,7 @@
 }:
 
 pkgs.writeText "fhc-edge-nginx.conf" ''
-  error_log stderr;
+  error_log syslog:server=unix:/dev/log;
 
   # Run workers under the edge cache user
   user ${cfg.workerUserName};
@@ -28,7 +28,7 @@ pkgs.writeText "fhc-edge-nginx.conf" ''
                         lib.optionalString (cfg.extraLogFields != "") " ${cfg.extraLogFields}"
                       } upstream_status=$upstream_status upstream_addr=$upstream_addr upstream_connect_time=$upstream_connect_time';
 
-    access_log  /var/log/nginx/access.log main;
+    access_log syslog:server=unix:/dev/log main;
 
     sendfile        on;
     #tcp_nopush     on;
