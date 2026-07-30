@@ -98,6 +98,8 @@ pkgs.writeText "fhc-edge-nginx.conf" ''
         ) "proxy_connect_timeout ${cfg.upstreamResolveTimeout};"}
       }
 
+      # nix client will attempt to retrieve logs from substituters, sometimes
+      # we never store/server logs; return 404 to cut log noise
       location /log {
         return 404;
       }
