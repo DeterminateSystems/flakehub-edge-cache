@@ -30,9 +30,6 @@ pkgs.writeText "fhc-edge-nginx.conf" ''
 
     access_log syslog:server=unix:/dev/log main;
 
-    sendfile        on;
-    #tcp_nopush     on;
-
     keepalive_timeout  65;
 
     ${lib.optionalString (cfg.tempDirectory != null) "proxy_temp_path ${cfg.tempDirectory} 1 2;"}
