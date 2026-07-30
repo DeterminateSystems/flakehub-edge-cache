@@ -85,7 +85,7 @@ flow.new {
       inherit (pkgs) lib;
 
       cfg = this // {
-        addr = listenAddrs;
+        listen = listenAddrs;
         cacheDirectory = "${flowContext.stateDir}/cache-state";
         tempDirectory = "${flowContext.stateDir}/cache-state-tmp";
         workerUserName = user.name;

@@ -53,6 +53,15 @@ in
           that install the bundle elsewhere.
         '';
       };
+
+      listen = lib.mkOption {
+        type = with lib.types; listOf str;
+        default = [
+          "80"
+          "[::]:80"
+        ];
+        description = "Listen directive for nginx. All servers are given as the default server.";
+      };
     }
   );
 

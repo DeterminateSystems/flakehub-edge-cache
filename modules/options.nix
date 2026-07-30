@@ -17,15 +17,6 @@ in
     description = "Whether nginx should request IPv6 addresses when resolving cache.flakehub.com.";
   };
 
-  listen = lib.mkOption {
-    type = with lib.types; listOf str;
-    default = [
-      "80"
-      "[::]:80"
-    ];
-    description = "Listen directive for nginx. All servers are given as the default server.";
-  };
-
   extraLogFields = lib.mkOption {
     type = lib.types.str;
     default = "cache=$upstream_cache_status upstream_bytes=$upstream_bytes_received request_time=$request_time";
