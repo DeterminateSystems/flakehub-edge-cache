@@ -63,14 +63,14 @@ pkgs.writeText "fhc-edge-nginx.conf" ''
 
       # Pass requests for narinfo directly to FlakeHub Cache, but never cache it
       location ~ /.*?\.narinfo$ {
-        set $fhc_upstream https://cache.flakehub.com;
+        set $fhc_upstream https://edge.cache.flakehub.com;
         proxy_pass $fhc_upstream;
         proxy_ssl_server_name on;
-        proxy_ssl_name cache.flakehub.com;
+        proxy_ssl_name edge.cache.flakehub.com;
         ${lib.optionalString cfg.sslVerify "proxy_ssl_verify on;"}
         ${lib.optionalString cfg.sslVerify "proxy_ssl_trusted_certificate \"${cfg.sslTrustedCertificate}\";"}
         ${lib.optionalString cfg.sslVerify "proxy_ssl_verify_depth ${toString cfg.sslVerifyDepth};"}
-        proxy_set_header Host cache.flakehub.com;
+        proxy_set_header Host edge.cache.flakehub.com;
         ${lib.optionalString (
           cfg.upstreamResolveTimeout != null
         ) "proxy_connect_timeout ${cfg.upstreamResolveTimeout};"}
@@ -85,14 +85,14 @@ pkgs.writeText "fhc-edge-nginx.conf" ''
         proxy_cache_valid ${cfg.cacheLifetime};
         ${lib.optionalString cfg.cacheLock "proxy_cache_lock on; proxy_cache_lock_timeout ${cfg.cacheLockTimeout}; proxy_cache_lock_age ${cfg.cacheLockAge};"}
 
-        set $fhc_upstream https://cache.flakehub.com;
+        set $fhc_upstream https://edge.cache.flakehub.com;
         proxy_pass $fhc_upstream;
         proxy_ssl_server_name on;
-        proxy_ssl_name cache.flakehub.com;
+        proxy_ssl_name edge.cache.flakehub.com;
         ${lib.optionalString cfg.sslVerify "proxy_ssl_verify on;"}
         ${lib.optionalString cfg.sslVerify "proxy_ssl_trusted_certificate \"${cfg.sslTrustedCertificate}\";"}
         ${lib.optionalString cfg.sslVerify "proxy_ssl_verify_depth ${toString cfg.sslVerifyDepth};"}
-        proxy_set_header Host cache.flakehub.com;
+        proxy_set_header Host edge.cache.flakehub.com;
         ${lib.optionalString (
           cfg.upstreamResolveTimeout != null
         ) "proxy_connect_timeout ${cfg.upstreamResolveTimeout};"}
